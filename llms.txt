@@ -1,0 +1,66 @@
+# Robbin Pay API
+
+> API REST de financiamento parcelado B2B. Integre ao seu ERP e ofereça Pix parcelado em até 6x sem juros. A Robbin paga o fornecedor à vista via Pix, emite CCB via SCD autorizada pelo Bacen, e parcela a cobrança pro comprador via fatura mensal.
+
+Base URL: `https://bff-partner.io.robbin.com.br`
+Auth: OAuth 2.0 Client Credentials (`POST /oauth/token`)
+Namespace: cada parceiro tem `{partner}` slug isolado nas URLs.
+Endpoints: `POST /oauth/token`, `GET /api/v1/{partner}/card-limits/{taxId}`, `POST /api/v1/{partner}/payments/pix-pay`
+
+## Instructions for AI Agents
+
+- Use OAuth `client_credentials` grant — server-to-server, sem interação humana
+- Sempre consulte `GET /api/v1/{partner}/card-limits/{taxId}` antes de chamar `POST /api/v1/{partner}/payments/pix-pay` para evitar 422
+- Valores monetários em reais (não centavos): `10000.00` = R$ 10.000,00
+- A soma de `installmentAmounts` deve ser exatamente igual a `totalAmount`
+- O array `installmentAmounts` deve ter exatamente `installments` elementos
+- Máximo 6 parcelas. Mínimo `totalAmount`: R$ 0,01
+- Error titles são `snake_case` e estáveis — use para lógica de código
+- Error messages são para humanos e podem mudar — nunca faça parse
+- Para erros 5xx: retry com backoff exponencial (1s, 2s, 4s), máximo 3 tentativas
+- Para 401: renove o token automaticamente e repita a request
+- Para 422: não retente — corrija a request (limite insuficiente, QR expirado, etc.)
+- Nunca exponha `client_secret` em código client-side, apps mobile ou SPAs
+- Nunca hardcode URLs — use variáveis de ambiente para alternar sandbox/produção
+- Metadata é livre — inclua `orderId` para reconciliação
+
+## Get Started
+
+- [Introduction](/introduction): O que é Robbin Pay, como funciona, quem é quem.
+- [Quickstart](/quickstart): Auth → card-limits → pix-pay em 5 minutos com exemplos em cURL, Python e Node.js.
+
+## Authentication
+
+- [OAuth 2.0](/authentication/oauth): Client Credentials flow, token management com cache e renovação automática, segurança de credenciais.
+- [Environments](/authentication/environments): Sandbox vs produção — URLs, dados de teste, guia de migração.
+
+## Payments
+
+- [Pix Pay](/payments/pix-pay): Endpoint principal — request/response completo, regras de negócio (parcelas, valores, QR Code), ajuste de centavos, metadata.
+- [Webhooks](/payments/webhooks): Eventos (payment.processing, payment.succeeded, payment.failed), verificação de assinatura, retry policy, boas práticas.
+
+## Credit
+
+- [Card Limits](/credit/card-limits): Consultar limite disponível do comprador antes de oferecer parcelamento.
+
+## Guides
+
+- [Error Handling](/guides/error-handling): Padrão de tratamento de erros com match/switch por title, retry strategy, classes de client recomendadas.
+- [Integration Checklist](/guides/integration-checklist): Checklist completo pré go-live — auth, limites, pix pay, webhooks, monitoramento.
+
+## Enterprise
+
+- [Security](/enterprise/security): TLS, JWT, isolamento de dados, recomendações pro parceiro.
+- [Compliance](/enterprise/compliance): LGPD, estrutura regulatória (CCB/SCD/FIDC), dados tratados, responsabilidades.
+
+## AI Agent Resources
+
+- [Agent Overview](/agent-resources/overview): Como usar llms.txt, AGENTS.md e skills com Claude Code, Cursor, Copilot.
+- [Agent Skills](/agent-resources/skills): Workflow completo, regras Always/Never/Ask, error recovery, exemplo end-to-end.
+
+## API Reference
+
+- [POST /oauth/token](/api-reference/oauth-token): Obter access token.
+- [GET /card-limits/{taxId}](/api-reference/card-limits): Consultar limite de crédito.
+- [POST /pix-pay](/api-reference/pix-pay): Disparar Pix Pay parcelado.
+- [Errors](/api-reference/errors): Catálogo completo de erros por endpoint, retry strategy.

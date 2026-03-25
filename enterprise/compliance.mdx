@@ -1,0 +1,89 @@
+---
+title: Compliance
+description: 'LGPD, regulatório e como a Robbin trata dados no arranjo de financiamento.'
+---
+
+# Compliance
+
+## Estrutura regulatória
+
+Robbin Pay opera como **originador de crédito** dentro de um arranjo regulado:
+
+| Componente | Responsável | Regulação |
+|-----------|-------------|-----------|
+| **Emissão de CCB** | Celcoin (SCD) | Autorizada pelo Bacen |
+| **Cessão de recebíveis** | FIDC Robbin Pagamentos I | CVM 175 (Anexo II) |
+| **Gestão de fatura** | Dock (BaaS) | Ledger e cobrança |
+| **Originação** | Robbin | Orquestrador do arranjo |
+
+O comprador — lojista PJ que compra do parceiro — formaliza relação via CCB emitida pela Celcoin. A Robbin não é instituição de pagamento — opera como facilitador na cadeia de crédito.
+
+---
+
+## LGPD
+
+### Dados tratados
+
+| Dado | Base legal | Compartilhado com parceiro? |
+|------|-----------|---------------------------|
+| CNPJ do comprador | Execução de contrato (art. 7º, V) | Sim — enviado pelo parceiro na request |
+| Limite de crédito | Execução de contrato | Sim — retornado via `/card-limits` |
+| Status do financiamento | Execução de contrato | Sim — via webhook |
+| Dados pessoais do comprador (nome, endereço) | Execução de contrato | Não |
+| Dados financeiros (fatura, parcelas) | Execução de contrato | Não |
+
+### Responsabilidades
+
+| Parte | Papel LGPD |
+|-------|-----------|
+| **Robbin** | Controladora dos dados do comprador |
+| **Parceiro** | Controladora dos dados do comprador no próprio sistema. Operadora quando processa dados por instrução da Robbin. |
+| **Celcoin** | Controladora para KYC. Operadora para emissão de CCB. |
+
+### O que o parceiro precisa garantir
+
+- Ter **base legal** para compartilhar o CNPJ do comprador com a Robbin (execução de contrato ou consentimento)
+- **Não armazenar** dados retornados pela API além do necessário para o fluxo de venda
+- **DPA** (Data Processing Agreement) disponível sob demanda — solicite à equipe Robbin
+
+---
+
+## Dados na API
+
+<AccordionGroup>
+  <Accordion title="O que a Robbin vê quando você chama /pix-pay?">
+    - CNPJ do comprador (enviado por você)
+    - QR Code Pix do fornecedor (payload EMV)
+    - Valor e condições de parcelamento
+    - Metadata (o que você incluir — orderId, invoiceNumber, etc.)
+
+    A Robbin **não** tem acesso ao conteúdo da venda (itens, quantidades) a menos que você inclua no metadata.
+  </Accordion>
+  <Accordion title="O que o parceiro vê via API?">
+    - Limite de crédito (total, usado, disponível)
+    - Status do financiamento (processing, succeeded, failed)
+    - financingId
+
+    O parceiro **não** vê: dados pessoais do comprador, histórico de faturas, outros financiamentos de outros parceiros.
+  </Accordion>
+  <Accordion title="Isolamento de dados entre parceiros">
+    Cada namespace (`{partner}`) é uma partição completa. Parceiro A não vê dados de Parceiro B, mesmo que compartilhem compradores. Limites de crédito são globais do comprador, mas cada parceiro vê apenas o limite disponível.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Retenção de dados
+
+{/* TBD: confirmar política de retenção */}
+
+| Tipo de dado | Período de retenção |
+|-------------|-------------------|
+| Dados de transação | Enquanto a CCB estiver ativa + período legal |
+| Logs de API | TBD |
+| Tokens OAuth | Descartados após expiração |
+| Metadata | Enquanto a transação existir |
+
+<Note>
+  A política completa de retenção será formalizada e publicada aqui. Para pedidos de exclusão de dados (LGPD art. 18), contate a equipe Robbin.
+</Note>

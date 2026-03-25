@@ -1,0 +1,88 @@
+---
+title: Security
+description: 'Práticas de segurança da API e infraestrutura Robbin Pay.'
+---
+
+# Segurança
+
+## Transporte
+
+| Medida | Detalhe |
+|--------|---------|
+| **TLS** | Todas as comunicações via TLS 1.2+ (TLS 1.3 preferido) |
+| **HSTS** | Strict Transport Security habilitado em todos os endpoints |
+| **Certificados** | Renovados automaticamente via Let's Encrypt |
+
+<Warning>
+  A API rejeita conexões sem TLS. Não tente HTTP — será redirecionado ou rejeitado.
+</Warning>
+
+---
+
+## Autenticação e autorização
+
+| Medida | Detalhe |
+|--------|---------|
+| **OAuth 2.0** | Client Credentials flow — sem interação humana |
+| **JWT** | Tokens assinados com RS256, expiração curta (1 hora) |
+| **Scoped** | Cada par de credenciais acessa apenas os dados do parceiro correspondente |
+| **Rotação** | Secrets rotacionáveis sob demanda — solicite à equipe Robbin |
+
+Parceiros não têm acesso aos dados de outros parceiros. O namespace `{partner}` garante isolamento.
+
+---
+
+## Dados
+
+| Medida | Detalhe |
+|--------|---------|
+| **Encryption at rest** | Dados sensíveis criptografados em repouso |
+| **No PII in logs** | CNPJs e dados financeiros nunca aparecem em logs em plaintext |
+| **Ambiente isolado** | Sandbox e produção são ambientes completamente separados — sem crossover de dados |
+
+---
+
+## Webhooks
+
+| Medida | Detalhe |
+|--------|---------|
+| **HMAC Signature** | Toda chamada inclui header de assinatura para verificação de autenticidade |
+| **HTTPS only** | Webhooks só são enviados para endpoints HTTPS |
+| **Replay protection** | Timestamp incluso no payload para detecção de replay |
+
+[Ver como verificar assinatura →](/payments/webhooks#verificação-de-assinatura)
+
+---
+
+## Recomendações para o parceiro
+
+<AccordionGroup>
+  <Accordion title="Armazene credenciais em secret manager">
+    Use AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager ou variáveis de ambiente do seu CI/CD. Nunca commite credenciais em Git.
+  </Accordion>
+  <Accordion title="Use credenciais diferentes por ambiente">
+    Sandbox e produção devem ter pares de `client_id` / `client_secret` distintos. Nunca use credenciais de produção em desenvolvimento.
+  </Accordion>
+  <Accordion title="Valide assinaturas de webhook">
+    Sempre verifique o header `X-Robbin-Signature` antes de processar qualquer evento. Requests sem assinatura válida devem retornar 401.
+  </Accordion>
+  <Accordion title="Monitore acessos">
+    Logue todas as chamadas à API Robbin no seu sistema. Em caso de incidente, os logs facilitam a investigação.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## SLA e disponibilidade
+
+{/* TBD: confirmar SLA real */}
+
+| Métrica | Valor |
+|---------|-------|
+| **Uptime target** | TBD |
+| **Latência P99** | TBD |
+| **Status page** | TBD |
+
+<Note>
+  Os valores de SLA serão formalizados no contrato de parceria. Esta página será atualizada quando disponíveis.
+</Note>

@@ -1,0 +1,129 @@
+---
+title: Skills
+description: 'Referência rápida para agentes AI — workflow, regras e error recovery.'
+---
+
+# Skills
+
+Referência condensada para agentes AI. Para o arquivo completo self-contained, veja [AGENTS.md](/agent-resources/agents-md).
+
+---
+
+## Workflow
+
+```
+1. POST /oauth/token                              → access_token
+2. GET  /api/v1/{partner}/card-limits/{taxId}      → availableLimit
+3. POST /api/v1/{partner}/payments/pix-pay         → financingId, status
+4. Receive webhook                                 → succeeded | failed
+```
+
+Sempre nesta ordem. Nunca pule o passo 2.
+
+---
+
+## Regras — Always / Never / Ask
+
+### Always
+
+- Use OAuth `client_credentials` para autenticação server-to-server
+- Consulte `card-limits` **antes** de `pix-pay`
+- Valide que `sum(installmentAmounts) == totalAmount`
+- Valide que `len(installmentAmounts) == installments`
+- Valores em **reais** (não centavos): `10000.00` = R$ 10.000
+- Trate erros 5xx com retry + exponential backoff (1s, 2s, 4s), máximo 3 tentativas
+- Cache o token e renove antes de expirar
+- Inclua `orderId` no metadata
+
+### Never
+
+- Nunca exponha `client_secret` em código client-side
+- Nunca envie `installments` > 6
+- Nunca envie `totalAmount` ≤ 0
+- Nunca retente erros 4xx (exceto 401 → renove token 1x)
+- Nunca faça parse de `message` para lógica — use `title`
+- Nunca hardcode URLs — use env vars
+
+### Ask (confirme com o usuário)
+
+- Qual o `{partner}` slug
+- Sandbox ou produção
+- Quantas parcelas (1-6)
+- O QR Code Pix payload (vem do fornecedor)
+
+---
+
+## Error Recovery
+
+| Erro | Ação |
+|------|------|
+| `401` unauthorized | Token expirou → `POST /oauth/token` e retry |
+| `404` customer_not_found | CNPJ errado ou não cadastrado → confirmar com usuário |
+| `422` insufficient_limit | Limite baixo → `GET /card-limits` e reportar |
+| `422` invalid_pix_payload | QR expirado → pedir novo ao fornecedor |
+| `422` installments_mismatch | Array size ≠ installments → corrigir |
+| `422` amount_mismatch | Soma ≠ totalAmount → recalcular |
+| `500` internal_error | Transitório → retry 3x com backoff (1s, 2s, 4s) |
+
+---
+
+## Ajuste de centavos
+
+Quando `totalAmount` não divide igualmente:
+
+```python
+amount = 10000.00
+n = 3
+base = round(amount / n, 2)               # 3333.33
+first = round(amount - base * (n - 1), 2)  # 3333.34
+installments = [first] + [base] * (n - 1)
+# [3333.34, 3333.33, 3333.33] — sum = 10000.00 ✓
+```
+
+---
+
+## Exemplo completo
+
+```python
+import requests, os
+
+# Config
+BASE = os.environ["ROBBIN_BASE_URL"]
+PARTNER = os.environ["ROBBIN_PARTNER"]
+CLIENT_ID = os.environ["ROBBIN_CLIENT_ID"]
+CLIENT_SECRET = os.environ["ROBBIN_CLIENT_SECRET"]
+
+# 1. Auth
+token = requests.post(f"{BASE}/oauth/token", json={
+    "client_id": CLIENT_ID,
+    "client_secret": CLIENT_SECRET,
+    "grant_type": "client_credentials"
+}).json()["access_token"]
+
+headers = {"Authorization": f"Bearer {token}"}
+
+# 2. Check limit
+TAX_ID = "12345678000190"
+limits = requests.get(
+    f"{BASE}/api/v1/{PARTNER}/card-limits/{TAX_ID}",
+    headers=headers
+).json()
+
+print(f"Available: R$ {limits['availableLimit']:,.2f}")
+
+# 3. Pix Pay
+if limits["availableLimit"] >= 10000.00:
+    payment = requests.post(
+        f"{BASE}/api/v1/{PARTNER}/payments/pix-pay",
+        headers=headers,
+        json={
+            "pixPayload": PIX_PAYLOAD,  # QR Code from supplier
+            "taxId": TAX_ID,
+            "totalAmount": 10000.00,
+            "installments": 3,
+            "installmentAmounts": [3333.34, 3333.33, 3333.33],
+            "metadata": {"orderId": "ORD-2026-001"},
+        },
+    ).json()
+    print(f"Financing: {payment['financingId']} — {payment['status']}")
+```

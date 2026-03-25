@@ -1,0 +1,118 @@
+---
+title: Error Handling
+description: 'Guia prático: como tratar erros da API no seu backend.'
+---
+
+# Error Handling
+
+Este guia mostra como implementar tratamento de erros robusto. Para o catálogo completo de erros, veja [API Reference → Errors](/api-reference/errors).
+
+## Princípios
+
+1. **Use `title` para lógica, `message` para logs.** O `title` é estável; a `message` pode mudar.
+2. **Retente apenas erros transientes** (5xx, 429, 401). Erros 4xx (exceto esses) indicam problema na request.
+3. **Renove o token automaticamente** ao receber 401. Use a classe `RobbinAuth` do [guia de OAuth](/authentication/oauth#token-management).
+4. **Adicione idempotência** ao seu lado para evitar pagamentos duplicados.
+
+---
+
+## Padrão recomendado
+
+<CodeGroup>
+```python Python
+import requests
+from robbin_auth import RobbinAuth  # Classe da página de OAuth
+
+auth = RobbinAuth(CLIENT_ID, CLIENT_SECRET)
+BASE = f"https://bff-partner.io.robbin.com.br/api/v1/{PARTNER}"
+
+
+def pix_pay(payload: dict) -> dict:
+    """Executa Pix Pay com tratamento completo de erros."""
+    resp = requests.post(
+        f"{BASE}/payments/pix-pay",
+        headers={"Authorization": f"Bearer {auth.token}"},
+        json=payload,
+    )
+
+    if resp.ok:
+        return resp.json()
+
+    error = resp.json()
+    title = error["title"]
+
+    match resp.status_code:
+        case 401:
+            # Token expirou — RobbinAuth renova automaticamente
+            # na próxima chamada a auth.token
+            raise RetryableError("Token expired, will retry")
+        case 422 if title == "insufficient_limit":
+            raise InsufficientLimitError(error["message"])
+        case 422 if title == "invalid_pix_payload":
+            raise InvalidPixError("QR Code expirado ou inválido")
+        case 422 if title in ("installments_mismatch", "amount_mismatch"):
+            raise ValidationError(f"Erro de cálculo: {error['message']}")
+        case 404:
+            raise CustomerNotFoundError(f"CNPJ não encontrado: {payload['taxId']}")
+        case _ if resp.status_code >= 500:
+            raise RetryableError(f"Server error: {title}")
+        case _:
+            raise UnexpectedError(f"{resp.status_code}: {title} — {error['message']}")
+```
+
+```javascript Node.js
+class RobbinClient {
+  #auth;
+  #baseUrl;
+
+  constructor(auth, partner) {
+    this.#auth = auth;
+    this.#baseUrl = `https://bff-partner.io.robbin.com.br/api/v1/${partner}`;
+  }
+
+  async pixPay(payload) {
+    const resp = await fetch(`${this.#baseUrl}/payments/pix-pay`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${await this.#auth.getToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (resp.ok) return resp.json();
+
+    const error = await resp.json();
+
+    switch (error.title) {
+      case "insufficient_limit":
+        throw new InsufficientLimitError(error.message);
+      case "invalid_pix_payload":
+        throw new InvalidPixError("QR Code expirado ou inválido");
+      case "installments_mismatch":
+      case "amount_mismatch":
+        throw new ValidationError(`Erro de cálculo: ${error.message}`);
+      case "customer_not_found":
+        throw new CustomerNotFoundError(`CNPJ não encontrado`);
+      default:
+        if (resp.status >= 500) {
+          throw new RetryableError(`Server error: ${error.title}`);
+        }
+        throw new UnexpectedError(`${resp.status}: ${error.title}`);
+    }
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## Checklist de implementação
+
+- [ ] Classe de autenticação com renovação automática ([ver OAuth](/authentication/oauth#token-management))
+- [ ] Retry com backoff para 5xx e 429 ([ver catálogo](/api-reference/errors#retry-strategy))
+- [ ] Renovação de token automática ao receber 401
+- [ ] Parsing de erros usando `title` (não `message`)
+- [ ] Logging do response body completo em caso de erro
+- [ ] Controle de idempotência (evitar Pix Pay duplicado)
+- [ ] Erros traduzidos/adaptados para o usuário final do seu sistema

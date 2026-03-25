@@ -1,0 +1,101 @@
+---
+title: Integration Checklist
+description: 'Tudo que você precisa antes de ir ao ar com a Robbin Pay.'
+---
+
+# Checklist de Integração
+
+Use este checklist para garantir que sua integração está completa antes de migrar para produção.
+
+---
+
+## Pré-requisitos
+
+<Steps>
+  <Step title="Contrato assinado">
+    Contrato de parceria com a Robbin formalizado.
+  </Step>
+  <Step title="Credenciais de sandbox recebidas">
+    `client_id` e `client_secret` de sandbox fornecidos pela equipe Robbin via email.
+  </Step>
+  <Step title="Namespace definido">
+    Slug do parceiro (`{partner}`) confirmado. Usado em todas as URLs da API.
+  </Step>
+  <Step title="Webhook endpoint configurado">
+    URL HTTPS pública para receber notificações de status. [Ver docs de webhook →](/payments/webhooks)
+  </Step>
+</Steps>
+
+---
+
+## Integração técnica
+
+### Autenticação
+
+- [ ] OAuth Client Credentials funcionando (`POST /oauth/token`)
+- [ ] Token sendo cacheado e renovado antes de expirar ([ver TokenManager](/authentication/oauth#token-management))
+- [ ] Credenciais armazenadas em variáveis de ambiente (não hardcoded)
+
+### Consulta de limite
+
+- [ ] `GET /card-limits/{taxId}` retornando limite do comprador
+- [ ] Fluxo de "limite insuficiente" tratado na UI/ERP
+- [ ] `404` tratado como "comprador não elegível"
+
+### Pix Pay
+
+- [ ] `POST /pix-pay` executando em sandbox
+- [ ] Soma de `installmentAmounts` igual a `totalAmount` (incluindo ajuste de centavos)
+- [ ] `metadata` preenchido com `orderId` para reconciliação
+- [ ] Controle de idempotência implementado (evitar pagamento duplicado)
+
+### Webhooks
+
+- [ ] Endpoint recebendo eventos `payment.processing`, `payment.succeeded`, `payment.failed`
+- [ ] Verificação de assinatura implementada
+- [ ] Handler retornando `200` em menos de 5 segundos
+- [ ] Eventos duplicados tratados (`financingId` + `event` como chave)
+
+### Error handling
+
+- [ ] Retry com backoff para erros 5xx ([ver guia](/guides/error-handling))
+- [ ] Renovação automática de token ao receber 401
+- [ ] Erros 422 tratados por `title` (não por `message`)
+- [ ] Logging do response body completo em caso de erro
+
+---
+
+## Go-live
+
+<Steps>
+  <Step title="Validação em sandbox completa">
+    Todos os itens acima marcados. Fluxo end-to-end testado.
+  </Step>
+  <Step title="Solicitar credenciais de produção">
+    Contate seu ponto focal na Robbin. Eles validam a integração e liberam as credenciais.
+  </Step>
+  <Step title="Trocar URLs e credenciais">
+    Atualize as variáveis de ambiente para apontar pra produção. [Ver guia de ambientes →](/authentication/environments)
+  </Step>
+  <Step title="Teste em produção com valor baixo">
+    Execute uma operação real de valor pequeno para confirmar que tudo funciona end-to-end.
+  </Step>
+  <Step title="Monitoramento ativo">
+    Confirme que alertas de webhook estão configurados e que erros 5xx geram notificações.
+  </Step>
+</Steps>
+
+---
+
+## Suporte
+
+{/* TBD: canal de suporte definitivo */}
+
+| Canal | Uso |
+|-------|-----|
+| Email (ponto focal Robbin) | Dúvidas de integração, credenciais, problemas técnicos |
+| Documentação | [docs.robbin.com.br](/) — referência técnica e guias |
+
+<Note>
+  Canal de suporte dedicado (Slack, portal) será disponibilizado em breve. Por enquanto, use o contato direto com a equipe Robbin.
+</Note>

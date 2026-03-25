@@ -1,0 +1,129 @@
+---
+title: Environments
+description: 'Sandbox e produção — como testar a integração antes de ir ao ar.'
+---
+
+# Ambientes
+
+Robbin Pay tem dois ambientes completamente isolados. Credenciais, dados e comportamentos são independentes.
+
+## URLs e credenciais
+
+| | Sandbox | Produção |
+|--|---------|----------|
+| **Base URL** | `https://bff-partner.io.robbin.com.br` | TBD — fornecida após go-live |
+| **Credenciais** | Solicite à equipe Robbin via email | Fornecidas após validação em sandbox |
+| **Namespace** | `{partner}` (mesmo slug nos dois ambientes) | `{partner}` |
+
+<Warning>
+  Credenciais de sandbox **não funcionam** em produção e vice-versa. Guarde cada par separado.
+</Warning>
+
+---
+
+## Sandbox
+
+O ambiente de sandbox simula todo o fluxo sem movimentar dinheiro real.
+
+### O que funciona igual à produção
+
+- Autenticação OAuth (mesmos endpoints e formato)
+- Consulta de limites de crédito
+- Chamada ao Pix Pay (retorna `financingId` e `status`)
+- Formato de erros e status codes
+- Webhooks (simulados, mesma estrutura)
+
+### O que é diferente
+
+| Aspecto | Comportamento no sandbox |
+|---------|--------------------------|
+| **Pix** | Não executa Pix real — o fornecedor não recebe |
+| **CCB** | Não emite CCB — financiamento é simulado |
+| **Limites** | Pré-configurados pela Robbin para testes |
+| **Webhooks** | Disparados automaticamente após a chamada |
+| **Dados** | Podem ser resetados a qualquer momento |
+
+### Dados de teste
+
+{/* TBD: dados de sandbox reais */}
+
+| Campo | Valor de teste | Nota |
+|-------|---------------|------|
+| CNPJ do comprador | TBD | CNPJ fictício com limite pré-aprovado |
+| QR Code Pix | TBD | Payload de teste que o sandbox aceita |
+| Limite pré-configurado | TBD | Valor disponível para testes |
+
+<Info>
+  Dados de teste serão fornecidos junto com as credenciais de sandbox. Quando disponíveis, esta página será atualizada.
+</Info>
+
+---
+
+## Da sandbox pra produção
+
+<Steps>
+  <Step title="Valide em sandbox">
+    Execute o fluxo completo: auth, card-limits, pix-pay. Confirme que webhooks chegam.
+  </Step>
+  <Step title="Passe pelo checklist">
+    Verifique todos os itens do [Integration Checklist](/guides/integration-checklist).
+  </Step>
+  <Step title="Solicite credenciais de produção">
+    Entre em contato com seu ponto focal na Robbin. Eles validam a integração e liberam as credenciais.
+  </Step>
+  <Step title="Troque URLs e credenciais">
+    Atualize seu backend para apontar pra URL de produção com as novas credenciais.
+  </Step>
+  <Step title="Teste em produção com valor baixo">
+    Faça uma operação real de valor pequeno pra confirmar que tudo funciona end-to-end.
+  </Step>
+</Steps>
+
+---
+
+## Configuração recomendada
+
+Use variáveis de ambiente para alternar entre ambientes sem mudar código:
+
+<CodeGroup>
+```bash .env (sandbox)
+ROBBIN_BASE_URL=https://bff-partner.io.robbin.com.br
+ROBBIN_CLIENT_ID=sandbox_client_id
+ROBBIN_CLIENT_SECRET=sandbox_client_secret
+ROBBIN_PARTNER=acme
+```
+
+```bash .env (produção)
+ROBBIN_BASE_URL=https://...  # TBD
+ROBBIN_CLIENT_ID=prod_client_id
+ROBBIN_CLIENT_SECRET=prod_client_secret
+ROBBIN_PARTNER=acme
+```
+</CodeGroup>
+
+```python Python
+import os
+
+BASE_URL = os.environ["ROBBIN_BASE_URL"]
+PARTNER = os.environ["ROBBIN_PARTNER"]
+
+# Todos os endpoints usam a mesma base
+AUTH_URL = f"{BASE_URL}/oauth/token"
+LIMITS_URL = f"{BASE_URL}/api/v1/{PARTNER}/card-limits"
+PIX_PAY_URL = f"{BASE_URL}/api/v1/{PARTNER}/payments/pix-pay"
+```
+
+```javascript Node.js
+const BASE_URL = process.env.ROBBIN_BASE_URL;
+const PARTNER = process.env.ROBBIN_PARTNER;
+
+const URLS = {
+  auth: `${BASE_URL}/oauth/token`,
+  cardLimits: (taxId) => `${BASE_URL}/api/v1/${PARTNER}/card-limits/${taxId}`,
+  pixPay: `${BASE_URL}/api/v1/${PARTNER}/payments/pix-pay`,
+};
+```
+
+<Tip>
+  Nunca faça `if (env === "production")` pra trocar URLs no código. Use variáveis de ambiente e deixe a infra decidir.
+</Tip>

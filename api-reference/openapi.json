@@ -1,0 +1,337 @@
+{
+  "openapi": "3.0.2",
+  "info": {
+    "title": "Robbin Pay API",
+    "version": "1.0.0",
+    "description": "API de financiamento parcelado B2B. Integre ao seu ERP e ofereça parcelamento sem juros."
+  },
+  "servers": [
+    {
+      "url": "https://bff-partner.io.robbin.com.br",
+      "description": "Sandbox"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "JWT obtido via POST /oauth/token"
+      }
+    },
+    "schemas": {
+      "OAuthTokenRequest": {
+        "type": "object",
+        "required": ["client_id", "client_secret", "grant_type"],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "Client ID fornecido pela Robbin.",
+            "example": "your_client_id"
+          },
+          "client_secret": {
+            "type": "string",
+            "description": "Client Secret fornecido pela Robbin.",
+            "example": "your_client_secret"
+          },
+          "grant_type": {
+            "type": "string",
+            "enum": ["client_credentials"],
+            "description": "Deve ser 'client_credentials'."
+          }
+        }
+      },
+      "OAuthTokenResponse": {
+        "type": "object",
+        "required": ["access_token", "token_type", "expires_in"],
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "JWT para autenticar requests.",
+            "example": "eyJhbGciOiJSUzI1NiIs..."
+          },
+          "token_type": {
+            "type": "string",
+            "description": "Sempre 'Bearer'.",
+            "example": "Bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Tempo de expiração em segundos.",
+            "example": 3600
+          },
+          "scope": {
+            "type": "string",
+            "description": "Escopo do token.",
+            "example": "partner"
+          }
+        }
+      },
+      "PixPayRequest": {
+        "type": "object",
+        "required": ["pixPayload", "taxId", "totalAmount", "installments", "installmentAmounts"],
+        "properties": {
+          "pixPayload": {
+            "type": "string",
+            "description": "Payload do QR Code Pix (copia e cola do QR gerado pelo fornecedor).",
+            "example": "00020126580014br.gov.bcb.pix..."
+          },
+          "taxId": {
+            "type": "string",
+            "description": "CNPJ do comprador, sem pontuação.",
+            "example": "12345678000190"
+          },
+          "totalAmount": {
+            "type": "number",
+            "minimum": 0.01,
+            "description": "Valor total em BRL (reais).",
+            "example": 10000.00
+          },
+          "installments": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "Número de parcelas (1 a 6).",
+            "example": 3
+          },
+          "installmentAmounts": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Valor de cada parcela em BRL. A soma deve ser igual a totalAmount.",
+            "example": [3333.34, 3333.33, 3333.33]
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "description": "Dados extras do parceiro (IDs de pedido, código do vendedor, etc.).",
+            "additionalProperties": {},
+            "example": { "orderId": "ORD-2026-001", "sellerCode": "V001" }
+          }
+        }
+      },
+      "PixPayResponse": {
+        "type": "object",
+        "required": ["financingId", "status"],
+        "properties": {
+          "financingId": {
+            "type": "string",
+            "description": "ID do financiamento na Robbin.",
+            "example": "fin_abc123"
+          },
+          "status": {
+            "type": "string",
+            "description": "Status atual do pagamento.",
+            "enum": ["processing", "succeeded", "failed"],
+            "example": "processing"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "Mensagem descritiva opcional.",
+            "example": "Payment is being processed"
+          }
+        }
+      },
+      "CardLimitsResponse": {
+        "type": "object",
+        "required": ["taxId", "totalLimit", "usedLimit", "availableLimit"],
+        "properties": {
+          "taxId": {
+            "type": "string",
+            "description": "CNPJ consultado.",
+            "example": "12345678000190"
+          },
+          "totalLimit": {
+            "type": "number",
+            "description": "Limite total aprovado (R$).",
+            "example": 100000.00
+          },
+          "usedLimit": {
+            "type": "number",
+            "description": "Limite em uso por financiamentos ativos (R$).",
+            "example": 30000.00
+          },
+          "availableLimit": {
+            "type": "number",
+            "description": "Limite disponível para novas operações (R$).",
+            "example": 70000.00
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": ["title", "message"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Tipo do erro.",
+            "example": "insufficient_limit"
+          },
+          "message": {
+            "type": "string",
+            "description": "Mensagem detalhada do erro.",
+            "example": "Customer does not have enough credit limit for this transaction."
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/oauth/token": {
+      "post": {
+        "operationId": "oauthToken",
+        "tags": ["Authentication"],
+        "summary": "Obter access token",
+        "description": "Autentica via OAuth 2.0 Client Credentials e retorna um JWT. Use o token no header `Authorization: Bearer {token}` em todas as chamadas subsequentes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OAuthTokenRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token gerado com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OAuthTokenResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Credenciais inválidas.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{partner}/card-limits/{taxId}": {
+      "get": {
+        "operationId": "getCardLimits",
+        "tags": ["Credit"],
+        "summary": "Consultar limite de crédito",
+        "description": "Retorna o limite de crédito disponível do comprador. Consulte antes de disparar o Pix Pay para evitar erros 422.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "partner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Slug do namespace do parceiro.",
+            "example": "acme"
+          },
+          {
+            "name": "taxId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "CNPJ do comprador, sem pontuação.",
+            "example": "12345678000190"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Limite consultado com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CardLimitsResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Não autenticado.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "404": {
+            "description": "Comprador não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{partner}/payments/pix-pay": {
+      "post": {
+        "operationId": "pixPay",
+        "tags": ["Payments"],
+        "summary": "Pix Pay parcelado",
+        "description": "Envia o QR Code Pix e condições de parcelamento. A Robbin paga o fornecedor à vista via Pix e parcela a cobrança pro comprador em até 6x.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "partner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Slug do namespace do parceiro.",
+            "example": "acme"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PixPayRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pagamento iniciado com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PixPayResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Request inválida (campos obrigatórios faltando).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "404": {
+            "description": "Comprador não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validação falhou (limite insuficiente, soma de parcelas não bate, etc.).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro interno.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

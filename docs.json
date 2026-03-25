@@ -1,0 +1,110 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Robbin",
+  "theme": "maple",
+  "appearance": {
+    "default": "dark"
+  },
+  "logo": {
+    "dark": "/static/logo-dark.svg",
+    "light": "/static/logo-light.svg"
+  },
+  "favicon": "/static/favicon.svg",
+  "colors": {
+    "primary": "#e4e4e7",
+    "light": "#f4f4f5",
+    "dark": "#d4d4d8"
+  },
+  "font": {
+    "headings": { "family": "DM Sans", "weight": 700 },
+    "body": { "family": "Inter" }
+  },
+  "topbarLinks": [
+    {
+      "name": "Sandbox",
+      "url": "https://bff-partner.io.robbin.com.br/api/v1/api-explorer"
+    }
+  ],
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "Agent Resources",
+      "icon": "robot",
+      "url": "/agent-resources/overview"
+    }
+  ],
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": ["introduction", "quickstart"]
+      },
+      {
+        "group": "Authentication",
+        "pages": [
+          "authentication/oauth",
+          "authentication/environments"
+        ]
+      },
+      {
+        "group": "Payments",
+        "pages": [
+          "payments/pix-pay",
+          "payments/webhooks"
+        ]
+      },
+      {
+        "group": "Credit",
+        "pages": [
+          "credit/card-limits"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/error-handling",
+          "guides/integration-checklist"
+        ]
+      },
+      {
+        "group": "Enterprise",
+        "pages": [
+          "enterprise/security",
+          "enterprise/compliance"
+        ]
+      },
+      {
+        "group": "AI Agents",
+        "pages": [
+          "agent-resources/overview",
+          "agent-resources/skills",
+          "agent-resources/agents-md"
+        ]
+      },
+      {
+        "group": "API Reference",
+        "pages": [
+          "api-reference/oauth-token",
+          "api-reference/card-limits",
+          "api-reference/pix-pay",
+          "api-reference/errors"
+        ]
+      }
+    ]
+  },
+  "openapi": "api-reference/openapi.json",
+  "feedback": {
+    "thumbsRating": true
+  },
+  "api": {
+    "baseUrl": "https://bff-partner.io.robbin.com.br"
+  },
+  "seo": {
+    "indexHiddenPages": false
+  }
+}

@@ -1,0 +1,194 @@
+---
+title: Errors
+description: 'Catálogo completo de erros, formato de resposta, e como reagir a cada um.'
+---
+
+# Erros
+
+## Formato
+
+Toda resposta de erro da API segue o mesmo formato:
+
+```json
+{
+  "title": "error_type",
+  "message": "Human-readable description of what went wrong."
+}
+```
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `title` | string | Código do erro em `snake_case`. Estável — use no código para lógica de tratamento. |
+| `message` | string | Descrição legível. Pode mudar — **não** faça parse neste campo. |
+
+---
+
+## HTTP Status Codes
+
+| Status | Significado | Retentável? | Ação |
+|--------|-------------|-------------|------|
+| `400` | **Bad Request** | Não | Request malformada. Corrija os campos e tente novamente. |
+| `401` | **Unauthorized** | Sim (1x) | Token expirado ou ausente. Renove via `/oauth/token` e repita. |
+| `404` | **Not Found** | Não | Recurso não existe. Verifique o CNPJ ou ID. |
+| `422` | **Unprocessable Entity** | Não | Validação de negócio falhou. Veja o `title` para entender a causa. |
+| `429` | **Too Many Requests** | Sim (com delay) | Rate limit atingido. Aguarde o tempo indicado no header `Retry-After`. |
+| `500` | **Internal Server Error** | Sim | Erro interno. Retry com backoff exponencial. |
+| `502/503` | **Service Unavailable** | Sim | Serviço temporariamente fora. Retry com backoff. |
+
+---
+
+## Catálogo de erros por endpoint
+
+### `POST /oauth/token`
+
+| Title | HTTP | Causa | Ação |
+|-------|------|-------|------|
+| `invalid_credentials` | 401 | `client_id` ou `client_secret` incorreto | Verifique as credenciais. Sandbox e produção usam pares diferentes. |
+| `invalid_grant_type` | 400 | `grant_type` ausente ou diferente de `client_credentials` | Corrija o body. |
+
+### `GET /card-limits/{taxId}`
+
+| Title | HTTP | Causa | Ação |
+|-------|------|-------|------|
+| `unauthorized` | 401 | Token expirado ou ausente | Renove o token. |
+| `customer_not_found` | 404 | CNPJ não cadastrado na Robbin | Confirme que o comprador completou o onboarding no app Robbin. |
+
+### `POST /pix-pay`
+
+| Title | HTTP | Causa | Ação |
+|-------|------|-------|------|
+| `invalid_request` | 400 | Campos obrigatórios faltando ou formato inválido | Verifique o body contra o [schema](/payments/pix-pay#body). |
+| `customer_not_found` | 404 | `taxId` não encontrado | Confirme que o CNPJ está correto e o comprador está aprovado. |
+| `insufficient_limit` | 422 | Comprador não tem limite para o valor | Consulte [`/card-limits`](/credit/card-limits) e ofereça valor menor ou menos parcelas. |
+| `invalid_pix_payload` | 422 | QR Code Pix inválido, expirado ou já utilizado | Solicite novo QR ao fornecedor. |
+| `installments_mismatch` | 422 | Tamanho de `installmentAmounts` ≠ `installments` | Array deve ter exatamente N elementos. |
+| `amount_mismatch` | 422 | Soma de `installmentAmounts` ≠ `totalAmount` | Recalcule os valores. [Veja ajuste de centavos](/payments/pix-pay#valores). |
+| `internal_error` | 500 | Erro interno | Retry com backoff. Se persistir após 3 tentativas, contate suporte. |
+
+---
+
+## Retry strategy
+
+### Quais erros retentar?
+
+| Status | Retentar? | Estratégia |
+|--------|-----------|------------|
+| 4xx (exceto 401, 429) | **Não** | Corrija a request. Retentar não vai mudar o resultado. |
+| 401 | **Sim, 1x** | Renove o token e repita a request original. |
+| 429 | **Sim** | Aguarde `Retry-After` header (ou 60s fallback). |
+| 5xx | **Sim** | Backoff exponencial: 1s → 2s → 4s, máximo 3 tentativas. |
+
+### Implementação
+
+<CodeGroup>
+```python Python
+import time
+import requests
+
+def call_with_retry(method, url, max_retries=3, **kwargs):
+    """Executa request com retry automático para erros transientes."""
+    for attempt in range(max_retries):
+        resp = requests.request(method, url, **kwargs)
+
+        if resp.status_code < 500 and resp.status_code != 429:
+            return resp  # Sucesso ou erro de cliente (não retentável)
+
+        if resp.status_code == 429:
+            wait = int(resp.headers.get("Retry-After", 60))
+        else:
+            wait = 2 ** attempt  # 1s, 2s, 4s
+
+        if attempt < max_retries - 1:
+            time.sleep(wait)
+
+    return resp  # Última tentativa falhou
+
+
+# Uso
+resp = call_with_retry(
+    "POST",
+    f"{BASE_URL}/api/v1/{PARTNER}/payments/pix-pay",
+    headers={"Authorization": f"Bearer {token}"},
+    json=payload,
+)
+
+if resp.ok:
+    financing = resp.json()
+else:
+    error = resp.json()
+    print(f"Erro: {error['title']} — {error['message']}")
+```
+
+```javascript Node.js
+async function callWithRetry(url, options, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const resp = await fetch(url, options);
+
+    if (resp.status < 500 && resp.status !== 429) {
+      return resp; // Sucesso ou erro de cliente
+    }
+
+    if (attempt < maxRetries - 1) {
+      const wait =
+        resp.status === 429
+          ? parseInt(resp.headers.get("Retry-After") || "60") * 1000
+          : 2 ** attempt * 1000; // 1s, 2s, 4s
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+}
+
+// Uso
+const resp = await callWithRetry(
+  `${BASE_URL}/api/v1/${PARTNER}/payments/pix-pay`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  }
+);
+
+if (resp.ok) {
+  const financing = await resp.json();
+} else {
+  const { title, message } = await resp.json();
+  console.error(`Erro: ${title} — ${message}`);
+}
+```
+</CodeGroup>
+
+<Tip>
+  Em produção, adicione jitter ao backoff para evitar thundering herd: `wait = base * 2^attempt + random(0, base)`.
+</Tip>
+
+---
+
+## Boas práticas
+
+<AccordionGroup>
+  <Accordion title="Use title, não message, para lógica de código">
+    O `title` é estável e funciona como código de erro. A `message` é para humanos e pode mudar sem aviso.
+
+    ```python
+    # ✅ Correto
+    if error["title"] == "insufficient_limit":
+        reduce_amount()
+
+    # ❌ Errado — message pode mudar
+    if "limit" in error["message"]:
+        reduce_amount()
+    ```
+  </Accordion>
+  <Accordion title="Logue o response body completo">
+    Em caso de erro inesperado, o body completo facilita o troubleshooting com a equipe Robbin.
+  </Accordion>
+  <Accordion title="Trate 401 como 'token expirou'">
+    Se receber 401 em qualquer endpoint (exceto `/oauth/token`), renove o token automaticamente e repita a request. Evite pedir token novo a cada request — use o `RobbinAuth` da [página de OAuth](/authentication/oauth#token-management).
+  </Accordion>
+  <Accordion title="Nunca exponha mensagens de erro ao usuário final">
+    As mensagens da API são técnicas e em inglês. Traduza e adapte para o contexto do seu produto.
+  </Accordion>
+</AccordionGroup>

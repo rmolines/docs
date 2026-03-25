@@ -1,0 +1,107 @@
+---
+title: AGENTS.md
+description: 'Arquivo de instruções para agentes AI — copie na raiz do seu projeto.'
+---
+
+# AGENTS.md
+
+Copie o conteúdo abaixo para um arquivo `AGENTS.md` (ou `CLAUDE.md` para Claude Code) na raiz do seu repositório. Agentes AI carregam automaticamente.
+
+<Tip>
+  **Claude Code:** salve como `CLAUDE.md`. **Cursor / Copilot / Codex:** salve como `AGENTS.md`. Ou crie um e faça symlink para o outro.
+</Tip>
+
+```markdown AGENTS.md
+# Robbin Pay API — Agent Instructions
+
+## Overview
+
+Robbin Pay é uma API REST de financiamento parcelado B2B. Você envia um QR Code Pix e condições de parcelamento, a Robbin paga o fornecedor à vista e parcela a cobrança pro comprador em até 6x sem juros.
+
+- **Auth:** OAuth 2.0 Client Credentials (server-to-server)
+- **Base URL:** via env var `ROBBIN_BASE_URL`
+- **Namespace:** via env var `ROBBIN_PARTNER`
+- **Docs:** https://docs.robbin.com.br
+- **llms.txt:** https://docs.robbin.com.br/llms.txt
+
+## Environment Variables
+
+ROBBIN_BASE_URL=https://bff-partner.io.robbin.com.br
+ROBBIN_CLIENT_ID=<from Robbin team>
+ROBBIN_CLIENT_SECRET=<from Robbin team>
+ROBBIN_PARTNER=<your partner slug>
+
+## Workflow
+
+1. POST /oauth/token                              → access_token
+2. GET  /api/v1/{partner}/card-limits/{taxId}      → availableLimit
+3. POST /api/v1/{partner}/payments/pix-pay         → financingId, status
+4. Receive webhook                                 → succeeded | failed
+
+Always execute 1→2→3 in order. Never skip step 2.
+
+## Auth
+
+POST /oauth/token with {"client_id", "client_secret", "grant_type": "client_credentials"}
+→ {"access_token": "eyJ...", "expires_in": 3600}
+All requests: Authorization: Bearer {access_token}
+Cache token. Renew 60s before expiry. No refresh token.
+
+## Card Limits
+
+GET /api/v1/{partner}/card-limits/{taxId}
+→ {"taxId", "totalLimit", "usedLimit", "availableLimit"}
+Values in BRL (reais, not centavos). 404 = buyer not registered.
+
+## Pix Pay
+
+POST /api/v1/{partner}/payments/pix-pay
+Body: {pixPayload, taxId, totalAmount, installments, installmentAmounts, metadata?}
+→ 201 {"financingId", "status": "processing"}
+
+Rules:
+- totalAmount in BRL (10000.00 = R$10k). NOT centavos. Minimum: 0.01
+- installments: 1-6
+- sum(installmentAmounts) must == totalAmount
+- len(installmentAmounts) must == installments
+- metadata: free-form, include orderId for reconciliation
+
+## Error Handling
+
+Format: {"title": "snake_case", "message": "Human-readable"}
+Use title for logic. Never parse message.
+
+| title | HTTP | Action |
+|-------|------|--------|
+| unauthorized | 401 | Renew token, retry once |
+| customer_not_found | 404 | Confirm CNPJ with user |
+| insufficient_limit | 422 | Check /card-limits, reduce amount |
+| invalid_pix_payload | 422 | Request new QR from supplier |
+| installments_mismatch | 422 | Fix array length |
+| amount_mismatch | 422 | Fix sum |
+| internal_error | 500 | Retry 3x: 1s, 2s, 4s backoff |
+
+## Boundaries
+
+### Always
+- Use env vars for credentials — never hardcode
+- Call /card-limits before /pix-pay
+- Validate installmentAmounts sum and length before sending
+- Cache OAuth token, renew before expiry
+- Retry 5xx with exponential backoff (max 3)
+- Include orderId in metadata
+
+### Ask first
+- Which partner slug to use
+- Sandbox or production
+- Number of installments (1-6)
+- The QR Code Pix payload
+
+### Never
+- Never expose client_secret in frontend/mobile/SPA
+- Never send installments > 6 or totalAmount <= 0
+- Never retry 4xx (except 401 → renew once)
+- Never parse error message for logic — use title
+- Never skip /card-limits before /pix-pay
+- Never hardcode base URL
+```

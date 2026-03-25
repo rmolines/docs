@@ -1,0 +1,99 @@
+---
+title: AI Agent Resources
+description: 'Documentação otimizada para agentes AI integrarem com a Robbin Pay API.'
+---
+
+# Agent Resources
+
+Robbin Pay oferece três artefatos para agentes AI integrarem automaticamente com a API — sem precisar navegar a documentação humana.
+
+| Artefato | O que é | Quando usar |
+|----------|---------|-------------|
+| [`llms.txt`](/llms.txt) | Índice curado + instruções diretas | Agente precisa descobrir o que a API faz |
+| [`llms-full.txt`](/llms-full.txt) | Toda a documentação em Markdown flat | Agente precisa do contexto completo |
+| [`AGENTS.md`](/agent-resources/agents-md) | Instruções procedurais self-contained | Copiar na raiz do repo do parceiro |
+
+---
+
+## llms.txt
+
+Índice machine-readable de toda a documentação, com uma seção `## Instructions` que dá diretrizes diretas ao agente (estilo Stripe).
+
+```
+https://docs.robbin.com.br/llms.txt
+```
+
+Inclui:
+- Resumo do produto e base URL
+- Instruções explícitas (ex: "sempre consulte `/card-limits` antes de `/pix-pay`")
+- Links para cada página com descrição de uma linha
+
+---
+
+## llms-full.txt
+
+Toda a documentação compilada em um único Markdown. Gerado automaticamente — sempre atualizado.
+
+```
+https://docs.robbin.com.br/llms-full.txt
+```
+
+Use quando o agente tem contexto grande (ex: Claude Code com 200k tokens) e precisa de referência completa.
+
+---
+
+## AGENTS.md
+
+Arquivo para copiar na **raiz do repositório** do parceiro. Agentes como Claude Code, Cursor, Copilot e Codex carregam automaticamente.
+
+<Tip>
+  Este é o artefato mais efetivo. [Evals da Vercel](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals) mostram que AGENTS.md com índice de docs atinge **100% de sucesso** vs 53% sem documentação.
+</Tip>
+
+### Como usar
+
+**Claude Code** (usa `CLAUDE.md`):
+
+Copie o conteúdo da [página AGENTS.md](/agent-resources/agents-md) para a raiz do seu repo:
+
+- Claude Code: salve como `CLAUDE.md`
+- Cursor / Copilot / Codex: salve como `AGENTS.md`
+- Ambos: crie um e faça `ln -s AGENTS.md CLAUDE.md`
+
+**Uso manual (qualquer agente):**
+
+```
+Integre com a Robbin Pay API seguindo: https://docs.robbin.com.br/llms.txt
+```
+
+### O que contém
+
+- Env vars necessárias (`ROBBIN_BASE_URL`, `ROBBIN_CLIENT_ID`, etc.)
+- Workflow completo: auth → card-limits → pix-pay → webhook
+- Schemas inline com regras de validação
+- Tabela de erros com ação por error code
+- Boundaries: Always / Ask / Never
+- Ajuste de centavos em parcelas (snippet pronto)
+
+---
+
+## Content Negotiation
+
+Toda página da documentação aceita `Accept: text/markdown` e retorna Markdown limpo em vez de HTML:
+
+```bash
+curl -H "Accept: text/markdown" https://docs.robbin.com.br/payments/pix-pay
+```
+
+Útil para agentes que precisam de uma página específica sem parsear HTML.
+
+---
+
+## Qual artefato usar?
+
+| Cenário | Artefato |
+|---------|----------|
+| Agente no IDE integrando sua API | **AGENTS.md** na raiz do repo |
+| Chat assistant respondendo sobre Robbin Pay | **llms.txt** como contexto |
+| Pipeline de RAG / indexação | **llms-full.txt** como source |
+| Agente precisa de uma página específica | **Content negotiation** (markdown) |
